@@ -1,0 +1,3 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/simple-flask-auth/.venv/bin/python"
+}
