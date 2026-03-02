@@ -1,14 +1,15 @@
 import os
+import bcrypt
 from flask import Flask, request, jsonify
 from models.user import User
 from database import db
-from flask_login import LoginManager, login_user, login_required, logout_user
+from flask_login import LoginManager, login_user, login_required, logout_user, current_user
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your_secret_key'
-app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{os.path.join(basedir, "instance", "database.db")}'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:admin123@127.0.0.1:3306/flask-crud'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 login_manager = LoginManager(app)
@@ -31,11 +32,7 @@ def login():
     
     if username and password:
         user = User.query.filter_by(username=username).first()
-        print("user:", username)
-        print("user.username:", user.username)
-        print("user.password:", user.password)
-        print("password:", password)
-        if user and user.password == password:
+        if user and bcrypt.checkpw(str.encode(password), str.encode(user.password)):
             login_user(user)
             return jsonify({"message": "Login successful"}), 200
 
@@ -48,14 +45,15 @@ def logout():
     return jsonify({"message": "Logout successful"}), 200
 
 @app.route('/user', methods=['POST'])
-@login_required
+
 def create_user():
     data = request.get_json()
     username = data.get('username')
     password = data.get('password')
 
     if username and password:
-        user = User(username=username, password=password)
+        hashed_password = bcrypt.hashpw(str.encode(password), bcrypt.gensalt())
+        user = User(username=username, password=hashed_password, role='user') # role='user' é o default
         db.session.add(user)
         db.session.commit()
         return jsonify({"message": "User created successfully"}), 201
@@ -78,11 +76,16 @@ def update_user(user_id):
     username = data.get('username')
     password = data.get('password')
     
+    if user_id != current_user.id and current_user.role == 'user':
+        return jsonify({"message": "User not authorized to update this user"}), 403
+    
     if username and password:
+        
         user = User.query.get(user_id)
         if user:
+            hashed_password = bcrypt.hashpw(str.encode(password), bcrypt.gensalt())
             user.username = username
-            user.password = password
+            user.password = hashed_password
             db.session.commit()
             return jsonify({"message": "User updated successfully"}), 200
         else:
@@ -94,16 +97,13 @@ def update_user(user_id):
 @login_required
 def delete_user(user_id):
     user = User.query.get(user_id)
-
-    if user and user.id == user_id:
+    if user_id != current_user.id and current_user.role != 'admin':
         return jsonify({"message": "User not authorized to delete this user"}), 403
-        
-    if user :
+    
+    if user:
         db.session.delete(user)
         db.session.commit()
         return jsonify({"message": "User deleted successfully"}), 200
-    else:
-        return jsonify({"message": "User not found"}), 404
 
 @app.route('/users', methods=['GET'])
 @login_required
